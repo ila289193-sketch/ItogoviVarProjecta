@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3 uid="uid://npc_generic_01"]
+
+[ext_resource type="Script" path="res://SCRIPTS/npc.gd" id="1_npc_script"]
+[ext_resource type="Texture2D" uid="uid://bkx2vwrl35iwy" path="res://ДРУГОЕ/Mana Seed Farmer Sprite Free Sample/farmer base sheets/01body/fbas_1body_human_00.png" id="2_sprite"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_npc"]
+radius = 15.0
+height = 50.0
+
+[node name="NPC" type="Area2D"]
+script = ExtResource("1_npc_script")
+npc_name = "Житель"
+dialogue_lines = Array[String](["Привет, путник!", "Это деревня новичков.", "Осторожнее в лесу."])
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_sprite")
+hframes = 8
+vframes = 8
+frame = 18
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CapsuleShape2D_npc")
