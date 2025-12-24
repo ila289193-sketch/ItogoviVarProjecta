@@ -2,16 +2,24 @@ extends CharacterBody2D
 
 # Настройки скорости передвижения
 @export var speed: float = 200.0
-# Параметр для ускорения (бег) - хотя в Undertale его нет, оставим на всякий случай
+# Параметр для ускорения (бег)
 @export var run_speed: float = 350.0
+# Ускорение и трение для плавности
+@export var acceleration: float = 1500.0
+@export var friction: float = 1500.0
 
 # Ссылка на анимационный спрайт. 
-@onready var animated_sprite: AnimatedSprite2D = $CollisionShape2D/AnimatedSprite2D
+@onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
 
 # Зона взаимодействия
 var interaction_area: Area2D
 
 func _ready() -> void:
+    # Устанавливаем фильтрацию текстур на Linear, чтобы убрать "дрожание" пикселей при движении
+    # Это особенно важно для масштабированных спрайтов (как у Character_body1_2d)
+    if animated_sprite:
+        animated_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+        
     # Создаем зону взаимодействия программно
     interaction_area = Area2D.new()
     interaction_area.name = "InteractionArea"
@@ -24,50 +32,74 @@ func _ready() -> void:
     interaction_area.add_child(collision_shape)
 
 func _physics_process(delta: float) -> void:
-    # Реализация управления через WASD вручную
-    var input_x = int(Input.is_key_pressed(KEY_D)) - int(Input.is_key_pressed(KEY_A))
-    var input_y = int(Input.is_key_pressed(KEY_S)) - int(Input.is_key_pressed(KEY_W))
-    
-    # Создаем вектор направления и нормализуем его, чтобы скорость по диагонали была такой же
-    var direction = Vector2(input_x, input_y).normalized()
+    # Получаем вектор ввода через вспомогательную функцию
+    # Это обеспечивает поддержку и WASD, и стрелок, и геймпада
+    var direction = get_input_direction()
     
     var current_speed = speed
+    # Можно добавить проверку на бег (например, Shift)
+    if Input.is_key_pressed(KEY_SHIFT):
+        current_speed = run_speed
     
     if direction:
-        velocity = direction * current_speed
+        # Плавное ускорение
+        velocity = velocity.move_toward(direction * current_speed, acceleration * delta)
         update_animation(direction)
     else:
         # Плавная остановка (friction)
-        velocity = velocity.move_toward(Vector2.ZERO, current_speed)
-        # Останавливаем анимацию на последнем кадре или сбрасываем
+        velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
+        # Останавливаем анимацию, если персонаж почти остановился
         if animated_sprite.is_playing():
             animated_sprite.stop()
-            # Чтобы персонаж оставался в "стоячей" позе, можно переключить на frame 0
-            # animated_sprite.frame = 0 
+            # Сбрасываем кадр на первый (обычно стоячая поза), чтобы не замирать в странной позе
+            animated_sprite.frame = 0 
 
     move_and_slide()
-    
-    # Проверка взаимодействия
-    if Input.is_action_just_pressed("ui_accept"): # Enter, Space
-        try_interact()
 
-func try_interact():
+# Вспомогательная функция для получения ввода
+func get_input_direction() -> Vector2:
+    # 1. Пробуем получить ввод через стандартные действия (стрелки, геймпад)
+    # ui_left/right/up/down настроены в Godot по умолчанию
+    var vector = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+    
+    # 2. Если вектор нулевой (игрок не жмет стрелки), проверяем WASD вручную
+    # Это нужно, если в настройках проекта не добавлены маппинги для WASD
+    if vector == Vector2.ZERO:
+        var x = int(Input.is_key_pressed(KEY_D)) - int(Input.is_key_pressed(KEY_A))
+        var y = int(Input.is_key_pressed(KEY_S)) - int(Input.is_key_pressed(KEY_W))
+        vector = Vector2(x, y).normalized()
+        
+    return vector
+
+# Обработка ввода, который не был перехвачен GUI
+func _unhandled_input(event: InputEvent) -> void:
+    if event.is_action_pressed("ui_accept"):
+        try_interact("ui_accept")
+    
+    # Обработка нажатия E (Interact)
+    # Используем keycode для корректной работы
+    if event is InputEventKey and event.pressed and not event.echo:
+        if event.keycode == KEY_E:
+            try_interact("key_e")
+
+func try_interact(action_type: String):
     var areas = interaction_area.get_overlapping_areas()
+    
     for area in areas:
-        # Используем duck typing (проверку метода) вместо проверки класса, 
-        # чтобы избежать ошибок, если класс еще не зарегистрирован в кэше редактора.
-        if area.has_method("interact"):
-            area.interact(self)
-            return # Взаимодействуем только с одним объектом за раз
+        # Проверяем, есть ли у объекта свойство interaction_action
+        var target_action = "ui_accept" # По умолчанию
+        if "interaction_action" in area:
+            target_action = area.interaction_action
+        
+        # Если действие совпадает
+        if target_action == action_type:
+            if area.has_method("interact"):
+                area.interact(self)
+                return # Взаимодействуем только с одним объектом за раз
 
 # Функция обновления анимации в зависимости от направления
 func update_animation(dir: Vector2):
-    # Логика приоритетов анимации.
-    # Если мы движемся по диагонали (например, Вверх-Вправо),
-    # можно выбирать анимацию на основе того, какая ось "сильнее" нажата,
-    # но так как normalized() уравнивает их, возьмем простой приоритет.
-    
-    # Приоритет боковой анимации (как в Undertale, часто бок важнее)
+    # Приоритет боковой анимации
     if dir.x != 0:
         animated_sprite.play("right")
         # Отражаем спрайт если идем влево
